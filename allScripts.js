@@ -1,20 +1,20 @@
 const workbook = SpreadsheetApp.getActiveSpreadsheet();
 const allSheets = workbook.getSheets();
 const ui = SpreadsheetApp.getUi();
-// let correct = true;
+
 const months = {
-  январь: 1,
-  февраль: 2,
-  март: 3,
-  апрель: 4,
-  май: 5,
-  июнь: 6,
-  июль: 7,
-  август: 8,
-  сентябрь: 9,
-  октябрь: 10,
-  ноябрь: 11,
-  декабрь: 12,
+  "январь": 1,
+  "февраль": 2,
+  "март": 3,
+  "апрель": 4,
+  "май": 5,
+  "июнь": 6,
+  "июль": 7,
+  "август": 8,
+  "сентябрь": 9,
+  "октябрь": 10,
+  "ноябрь": 11,
+  "декабрь": 12,
 };
 
 
@@ -32,22 +32,29 @@ function getCorrectNames(startMonth, startYear, endMonth, endYear, check="РО")
     const listYear = check === "РО" ?  Number(name.slice(3, 7)) : Number(name.slice(14, 18))
     const listMonth = check === "РО" ? Number(name.slice(8, 10)) : Number(name.slice(19, 21))
     const totalListMonth = listYear * 12 + listMonth
-    
     return totalListMonth >= totalStartMonth && totalListMonth <= totalEndMonth
   }
 
-  const correctNames = allSheets.filter(isListFits)
-  const numOfMonths = totalEndMonth - totalStartMonth
-  const absentSheetNum = numOfMonths - correctNames.length
-  if (absentSheetNum !== 0) {
+  const correctLists = allSheets.filter(isListFits)
+  const numOfMonths = totalEndMonth - totalStartMonth + 1
+  const absentSheetNum = numOfMonths - correctLists.length
+  if (absentSheetNum > 0) {
     ui.alert(`Не хватает ${absentSheetNum} листов импортируйте данные или измените диапазон`)
     return false
   }
-  return correctNames
+  if(absentSheetNum < 0) {
+    ui.alert("Есть листы за одну и ту же дату, удалите или переименуйте неактуальный")
+    return false
+  }
+  return correctLists.map(list => list.getName())
 }
 
 function buyerReport() {
   const data = {};
+  let totalAmount = 0;
+  let totalCost = 0;
+  let totalPrice = 0;
+  
   const reportSheet = workbook.getSheetByName("Покупатели Отчет");
   const nameChosen = reportSheet.getRange("B2").getCell(1, 1).getValue();
   const fractionChosen = reportSheet.getRange("B3").getCell(1, 1).getValue();
@@ -59,17 +66,19 @@ function buyerReport() {
   function getDataFromSheet(sheetName) {
     const ss = workbook.getSheetByName(sheetName);
     const range = ss.getRange("A5:AK");
+    const lastYear = Number(sheetName.slice(3, 7)) === 2023
 
-    function filterByName(elt) {
-      if (nameChosen === "ВСЕ") return elt[17] === "" ? false : true;
-      if (elt[17] === nameChosen) return true;
+    function filterByName(row) {
+      const name = lastYear ? row[17] : row[9]
+      if (nameChosen === "ВСЕ") return name === "" ? false : true;
+      if (name === nameChosen) return true;
       return false;
     }
 
-    function filterByFraction(elt) {
+    function filterByFraction(row) {
       if (fractionChosen === "ВСЕ") return true;
-      if (elt[18].trim() === fractionChosen) return true;
-      return false;
+      const fraction = lastYear ? row[18].trim() : row[10].trim()
+      return (fraction === fractionChosen) 
     }
 
     const listdata = range
@@ -78,12 +87,13 @@ function buyerReport() {
       .filter(filterByFraction);
 
     listdata.forEach(row => {
-      const lastYear = Number(sheetName.slice(3, 7)) === 2023
       const buyer = lastYear ? row[17] : row[9];
       const fraction = lastYear ? row[18].trim() : row[10].trim();
-      const amount = lastYear ? row[19] : row[10];
-      const gross_price = (lastYear ? row[26] : row[17]) * amount;
-      const net_price = (lastYear ? row[33] : row[23]) * amount;
+      const amount = lastYear ? row[19] : row[11];
+      const p = lastYear ? row[26] : row[17]
+      const gross_price = p * amount;
+      const pp = lastYear ? row[33] : row[23];
+      const net_price = pp * amount;
       const station = lastYear ? row[14] : row[7];
 
       if (!(fraction in data)) {
@@ -119,11 +129,15 @@ function buyerReport() {
         data[fraction][station].total_money_net += net_price;
         data[fraction][station].total_amount += amount;
       }
+      totalAmount += amount;
+      totalCost += gross_price;
+      totalPrice += net_price;
+
     })
   } // конец функции getData
 
   const listOfMonths = getCorrectNames(startMonth, startYear, endMonth, endYear);
-
+  
   if (listOfMonths) {
     listOfMonths.forEach(getDataFromSheet)
 
@@ -157,7 +171,8 @@ function buyerReport() {
     reportSheet.deleteRows(9, 1992);
     reportSheet.insertRowsAfter(8, 1992);
 
-    const range = reportSheet.getRange("A9:AA");
+    // const range = reportSheet.getRange("A9:AA");
+
     let i = 1; // в range нумерация с 1
     for (fraction in data) {
       const av_price =
@@ -172,25 +187,24 @@ function buyerReport() {
             1;
           let k = 0;
           do {
+            // записали все отгрузки по одной
             const shipment = data[fraction][station].buyers[buyer].shipments[k];
-            range.getCell(i, 1).setValue(shipment[0]); //дата
-            range.getCell(i, 2).setValue(shipment[18]); //фракция
-            range.getCell(i, 3).setValue(shipment[14]); // станция
-            range.getCell(i, 4).setValue(shipment[17]); // покупатель
-            range.getCell(i, 5).setValue(shipment[19]); // тоннаж
-            range.getCell(i, 6).setValue(shipment[26]); // цена общая
-            range.getCell(i, 7).setValue(shipment[26] * shipment[19]); // стоимость
-            range.getCell(i, 8).setValue(shipment[33]); // цена net покупателя
-            range
-              .getCell(i, 9)
-              .setValue(data[fraction][station]["average_net"]); //net
-            range.getCell(i, 10).setValue(av_price); // - средняя net по фракции
-            range
-              .getCell(i, 11)
-              .setValue(`=100%*(I${i + 8}-J${i + 8})/J${i + 8}`);
+            const rangeToSet = reportSheet.getRange(`A${i + 8}:K${i+8}`)
+
+            const res = [[
+              shipment[0], shipment[18], shipment[14], 
+              shipment[17], shipment[19], shipment[26],
+              shipment[26] * shipment[19], shipment[33],
+              data[fraction][station]["average_net"], av_price,
+              `=100%*(I${i + 8}-J${i + 8})/J${i + 8}`
+            ]]
+            rangeToSet.setValues(res);
+            //
+
             i++;
             k++;
           } while (i < groupEnd - 7);
+          // свернули все отгрузки 
           let rangeToGroup = reportSheet.getRange(
             groupStart,
             1,
@@ -199,33 +213,34 @@ function buyerReport() {
           rangeToGroup.shiftRowGroupDepth(1);
           let group = reportSheet.getRowGroup(groupStart, 1);
           group.collapse();
-          /// отгрузки
+          //
+
+          // записали результирующее
           let num_s =
             data[fraction][station]["buyers"][buyer]["shipments"].length;
           let ending = getRightEnding(num_s);
           const shp = `${num_s} ${ending}`;
-
-          range.getCell(i, 1).setValue(shp);
-          range.getCell(i, 2).setValue(fraction);
-          range.getCell(i, 3).setValue(station);
-          range.getCell(i, 4).setValue(buyer);
           const net = data[fraction][station].buyers[buyer].net;
           const amount = data[fraction][station].buyers[buyer].amount;
           const gross = data[fraction][station].buyers[buyer].gross;
-          range.getCell(i, 5).setValue(amount);
-          range.getCell(i, 6).setValue(gross / amount);
-          range.getCell(i, 7).setValue(gross);
-          range.getCell(i, 8).setValue(net / amount);
-          range.getCell(i, 9).setValue(data[fraction][station].average_net);
-          range.getCell(i, 10).setValue(av_price);
-          range
-            .getCell(i, 11)
-            .setValue(`=100%*(I${i + 8}-J${i + 8})/ABS(J${i + 8})`);
+
+          const rangeToSet = reportSheet.getRange(`A${i + 8}:K${i + 8}`);
+          
+          const res = [[shp, fraction, station, buyer, amount, gross/amount, gross, net/amount, data[fraction][station].average_net, av_price, `=100%*(I${i + 8}-J${i + 8})/ABS(J${i + 8})`]];
+          rangeToSet.setValues(res);
+
+          // 
+
           i++;
         }
       }
     }
+    // дописали сумму в шапку таблицы
+    reportSheet.getRange("E8:E8").getCell(1, 1).setValue(totalAmount);
+    reportSheet.getRange("G8:G8").getCell(1, 1).setValue(totalCost);
+
     reportSheet.autoResizeRows(9, i - 1);
+    ui.alert(`Отчет сформирован`)
   }
 }
 
