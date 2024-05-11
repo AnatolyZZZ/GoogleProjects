@@ -313,22 +313,26 @@ function carrierReport() {
       .filter(filterByName)
       .filter(filterByStation);
 
+    if (!listedData.length) return ui.alert('Не было доставок с заданными параметрами')
+
     for (row of listedData) {
-      let ship = row[10] ? true : false;
-      const carrier = row[10] + row[7];
-      const station = row[14];
-      const carries = row[4];
-      const amount = row[19];
-      const type = row[5];
-      const price_net = Number(row[22]) + Number(row[23]);
-      const price_gross = Number(row[21]) + price_net;
+      const isShip =  before2024 ? !!row[10] : row[4] === 'т/х'
+
+
+      const carrier =  before2024 ? row[10] + row[7] : row[5];
+      const station = before2024 ? row[14] : row[7];
+      const carries =  before2024 ? row[4] : row[3];
+      const amount = before2024 ? row[19] : row[11];
+      const type = before2024 ? row[5] : row[4];
+      const deliveryPriceNet = before2024 ? Number(row[22]) + Number(row[23]) : Number(row[13]);
+      const deliveryPriceGross = before2024 ? Number(row[21]) + deliveryPriceNet : Number(row[12]) + deliveryPriceNet;
 
       if (!(carrier in data)) {
         data[carrier] = {
           stations: {},
-          _carries: 0,
-          _amount: 0,
-          shipper: ship,
+          carries: 0,
+          amount: 0,
+          isShip,
           total_money: 0,
         };
       }
@@ -344,9 +348,9 @@ function carrierReport() {
         };
       }
 
-      data[carrier]._carries += carries;
-      data[carrier]._amount += amount;
-      data[carrier].total_money += price_net;
+      data[carrier].carries += carries;
+      data[carrier].amount += amount;
+      data[carrier].total_money += deliveryPriceNet;
       data[carrier].stations[station].station_carries += carries;
       data[carrier].stations[station].station_amount += amount;
       const cur_type = data[carrier].stations[station].carrier_type;
@@ -356,17 +360,15 @@ function carrierReport() {
         data[carrier].stations[station].carrier_type = "разные";
       }
       data[carrier].stations[station].deliveries.push(row);
-      data[carrier].stations[station].station_total_price_net +=
-        Number(price_net);
-      data[carrier].stations[station].station_total_price_gross +=
-        Number(price_gross);
+      data[carrier].stations[station].station_total_price_net += deliveryPriceNet;
+      data[carrier].stations[station].station_total_price_gross += deliveryPriceGross;
 
       if (!(station in station_price)) {
-        station_price[station] = { _amount: 0, _price_net: 0, _price_gross: 0 };
+        station_price[station] = { amount: 0, price_net: 0, price_gross: 0 };
       }
-      station_price[station]._amount += amount;
-      station_price[station]._price_net += Number(price_net);
-      station_price[station]._price_gross += price_gross;
+      station_price[station].amount += amount;
+      station_price[station].price_net += deliveryPriceNet;
+      station_price[station].price_gross += deliveryPriceGross;
     }
   }
 
@@ -374,48 +376,52 @@ function carrierReport() {
     reportSheet.deleteRows(9, 992);
     reportSheet.insertRowsAfter(8, 992);
 
-    const range = reportSheet.getRange("A9:K");
-
     let i = 1;
     for (carrier in data) {
       for (station in data[carrier].stations) {
         // конкретные отгрузки
         const deliveries = data[carrier].stations[station].deliveries;
+       
         const groupStart = i + 8;
-        for (let j = 0; j < deliveries.length; j++) {
-          const row = deliveries[j];
-          range.getCell(i, 1).setValue(row[0]);
-          range.getCell(i, 2).setValue(carrier);
-          range.getCell(i, 3).setValue(station);
-          if (data[carrier].shipper) {
-            range.getCell(i, 4).setValue("водой");
-          } else {
-            range.getCell(i, 4).setValue(row[5]);
-          }
-          range.getCell(i, 5).setValue(row[4]);
-          range.getCell(i, 6).setValue(row[19]);
+
+        const setRow = (row) => {
+          const before2024 = row[0] < new Date('01.01.2024')
+          const type = data[carrier].isShip ? 'водой'
+            : before2024 
+              ? 
+              row[5] 
+              : 
+              row[4]
+          const carriers = before2024 ? row[4] : row[3];
+          const amount = before2024 ?  row[19] : row[11];
           const carrier_station_price_net =
-            data[carrier].stations[station].station_total_price_net /
+            data[carrier].stations[station].station_total_price_net / 
             data[carrier].stations[station].station_amount;
-          range.getCell(i, 7).setValue(carrier_station_price_net);
-          range.getCell(i, 8).setValue(Number(row[22]) + Number(row[23]));
-          range
-            .getCell(i, 9)
-            .setValue(
-              data[carrier].stations[station].station_total_price_gross /
-                data[carrier].stations[station].station_amount
-            );
-          const station_price_net =
-            station_price[station]._price_net / station_price[station]._amount;
-          range.getCell(i, 10).setValue(station_price_net);
-          if (station_price_net) {
-            range
-              .getCell(i, 11)
-              .setValue(`=100%*(G${i + 8}-J${i + 8})/ABS(J${i + 8})`);
-          }
+
+          const deliveryPriceNet = before2024 ? Number(row[22]) + Number(row[23]) : Number(row[13]);
+
+          const stationAverageGross = 
+            data[carrier].stations[station].station_total_price_gross /
+            data[carrier].stations[station].station_amount
+
+          const stationAverageNet = station_price[station].price_net / station_price[station].amount;
+
+          const diff = stationAverageNet ? `=100%*(G${i + 8}-J${i + 8})/ABS(J${i + 8})` : ''
+
+          const res = [[
+            row[0], carrier, station, 
+            type, carriers, amount, 
+            carrier_station_price_net, deliveryPriceNet, stationAverageGross,
+            stationAverageNet, diff
+          ]]
+
+          const rangeToSet = reportSheet.getRange(`A${i+ 8}:K${i+8}`)
+          rangeToSet.setValues(res)
 
           i++;
         }
+        deliveries.forEach(row => setRow(row));
+
         const groupEnd = i + 7;
         let rangeToGroup = reportSheet.getRange(
           groupStart,
@@ -426,57 +432,34 @@ function carrierReport() {
         let group = reportSheet.getRowGroup(groupStart, 1);
         group.collapse();
         // конкретные отгрузки закончились
+
         let num = deliveries.length;
         let ending = getRightEnding(num);
         const shp = `${num} ${ending}`;
-        range.getCell(i, 1).setValue(shp);
-        range.getCell(i, 2).setValue(carrier);
-        range.getCell(i, 3).setValue(station);
-        const type = data[carrier].shipper
-          ? "водой"
-          : data[carrier].stations[station].carrier_type;
-        range.getCell(i, 4).setValue(type);
-        range
-          .getCell(i, 5)
-          .setValue(data[carrier].stations[station].station_carries);
-        range
-          .getCell(i, 6)
-          .setValue(data[carrier].stations[station].station_amount);
+        const type = data[carrier].isShip ? 'водой' : data[carrier].stations[station].carrier_type;
+        const station_carries = data[carrier].stations[station].station_carries;
+        const station_amount = data[carrier].stations[station].station_amount;
         const carrier_station_price_net =
-          data[carrier].stations[station].station_total_price_net /
-          data[carrier].stations[station].station_amount;
-        range.getCell(i, 7).setValue(carrier_station_price_net);
-        range
-          .getCell(i, 8)
-          .setValue(data[carrier].stations[station].station_total_price_net);
-        range
-          .getCell(i, 9)
-          .setValue(
-            data[carrier].stations[station].station_total_price_gross /
-              data[carrier].stations[station].station_amount
-          );
+            data[carrier].stations[station].station_total_price_net /
+            data[carrier].stations[station].station_amount;
+        const station_total_price_net = data[carrier].stations[station].station_total_price_net
+
         const station_price_net =
-          station_price[station]._price_net / station_price[station]._amount;
-        range.getCell(i, 10).setValue(station_price_net);
-        if (station_price_net) {
-          range
-            .getCell(i, 11)
-            .setValue(`=100%*(G${i + 8}-J${i + 8})/ABS(J${i + 8})`);
-        }
+          station_price[station].price_net / station_price[station].amount;
+
+        const diff = station_price_net ? `=100%*(G${i + 8}-J${i + 8})/ABS(J${i + 8})` : ''
+
+        const res = [[
+          shp, carrier, station, type,
+          station_carries, station_amount, carrier_station_price_net,
+          station_total_price_net, station_amount, station_price_net, diff
+        ]]
+
+        const rangeToSet = reportSheet.getRange(`A${i+ 8}:K${i+8}`)
+        rangeToSet.setValues(res)
 
         i++;
       }
-
-      // сводная по поставщику
-      // range.getCell(i, 2).setValue(carrier);
-      // range.getCell(i, 3).setValue(Object.keys(data[carrier].stations).length)
-      // range.getCell(i, 5).setValue(data[carrier]._carries)
-      // range.getCell(i, 6).setValue(data[carrier]._amount)
-      // range.getCell(i, 8).setValue(data[carrier].total_money)
-      // if (data[carrier].shipper) {
-      //   range.getCell(i, 4).setValue('водой')
-      // }
-      // i++;
     }
     reportSheet.autoResizeRows(9, i - 1);
   }
@@ -663,7 +646,6 @@ function averageShipmentsReport() {
       const price_net = Number(row[33]);
       const _amount = Number(row[19]);
       const buyer = row[17];
-      // console.log(fraction, price_net, _amount)
       let shipment_type;
       switch (row[5]) {
         case "тх":
@@ -678,9 +660,6 @@ function averageShipmentsReport() {
         default:
           shipment_type = "carrier";
       }
-      // console.log(row[5], shipment_type, row[5] === 'тх')
-
-      // const shipment_type = (row[10] !== '') ? 'water' : row[5] === 'самовывоз' ? 'selfshipment' : 'carrier';
 
       if (!(fraction in data)) {
         data[fraction] = {
@@ -717,9 +696,6 @@ function averageShipmentsReport() {
     const range_to_clear = reportSheet.getRange("A8:AD");
     range_to_clear.clearContent();
     range_to_clear.setBackground("white");
-    // reportSheet.deleteRows (8, 992);
-    // reportSheet.insertRowsAfter(7, 992);
-    // sort fractions starting from 0*4
     function sorting(a, b) {
       return (
         Number(a[0].slice(0, a[0].indexOf("*")).replace(",", ".")) -
@@ -728,7 +704,6 @@ function averageShipmentsReport() {
     }
     // object.entries returns array wich we can sort and then convert back to object why convert back and not to use array?
     const sorted_data = Object.fromEntries(Object.entries(data).sort(sorting));
-    // console.log(Object.entries(sorted_data).length)
     const range = reportSheet.getRange("A8:AD");
     let i = 1;
     for (fraction in sorted_data) {
@@ -1040,7 +1015,7 @@ function deliveryReport() {
       i++;
     }
     let groupEnd = i - 1;
-    // console.log(groupStart, groupEnd)
+
     // +3 тут везде так как первые 3 строки служебные
     let rangeToGroup = reportSheet.getRange(
       groupStart + 3,
@@ -1073,9 +1048,4 @@ function deliveryReport() {
     i++;
   }
 
-  console.log(myTestFunction(5 + 6));
-}
-
-function tets() {
-  console.log(myTestFunction(5, 6));
 }
