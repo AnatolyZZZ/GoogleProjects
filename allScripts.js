@@ -1,3 +1,4 @@
+// GENERAL CONSTANTS
 const workbook = SpreadsheetApp.getActiveSpreadsheet();
 const allSheets = workbook.getSheets();
 const ui = SpreadsheetApp.getUi();
@@ -16,7 +17,10 @@ const months = {
   "ноябрь": 11,
   "декабрь": 12,
 };
+///
 
+
+// COMMON FUNCRIONS
 
 // возвращает список листов с по или false если какого-то не хватает
 function getCorrectNames(startMonth, startYear, endMonth, endYear, check="РО") {
@@ -49,6 +53,26 @@ function getCorrectNames(startMonth, startYear, endMonth, endYear, check="РО")
   return correctLists.map(list => list.getName())
 }
 
+function getRightEnding(num_s) {
+  let ending = "";
+  const i_end = [2, 3, 4];
+  const ok_end = [0, 5, 6, 7, 8, 9];
+  if ((num_s > 10) & (num_s < 20)) {
+    ending = "отгрузок";
+  } else {
+    if (num_s % 10 === 1) {
+      ending = "отгрузка";
+    } else if (i_end.includes(num_s % 10)) {
+      ending = "отгрузки";
+    } else if (ok_end.includes(num_s % 10)) {
+      ending = "отгрузок";
+    }
+  }
+  return ending;
+}
+////
+
+// BUYER REPORT
 function buyerReport() {
   const data = {};
   let totalAmount = 0;
@@ -66,10 +90,10 @@ function buyerReport() {
   function getDataFromSheet(sheetName) {
     const ss = workbook.getSheetByName(sheetName);
     const range = ss.getRange("A5:AK");
-    const lastYear = Number(sheetName.slice(3, 7)) === 2023
+    const before2024 = Number(sheetName.slice(3, 7)) === 2023
 
     function filterByName(row) {
-      const name = lastYear ? row[17] : row[9]
+      const name = before2024 ? row[17] : row[9]
       if (nameChosen === "ВСЕ") return name === "" ? false : true;
       if (name === nameChosen) return true;
       return false;
@@ -77,7 +101,7 @@ function buyerReport() {
 
     function filterByFraction(row) {
       if (fractionChosen === "ВСЕ") return true;
-      const fraction = lastYear ? row[18].trim() : row[10].trim()
+      const fraction = before2024 ? row[18].trim() : row[10].trim()
       return (fraction === fractionChosen) 
     }
 
@@ -87,14 +111,14 @@ function buyerReport() {
       .filter(filterByFraction);
 
     listdata.forEach(row => {
-      const buyer = lastYear ? row[17] : row[9];
-      const fraction = lastYear ? row[18].trim() : row[10].trim();
-      const amount = lastYear ? row[19] : row[11];
-      const p = lastYear ? row[26] : row[17]
+      const buyer = before2024 ? row[17] : row[9];
+      const fraction = before2024 ? row[18].trim() : row[10].trim();
+      const amount = before2024 ? row[19] : row[11];
+      const p = before2024 ? row[26] : row[17]
       const gross_price = p * amount;
-      const pp = lastYear ? row[33] : row[23];
+      const pp = before2024 ? row[33] : row[23];
       const net_price = pp * amount;
-      const station = lastYear ? row[14] : row[7];
+      const station = before2024 ? row[14] : row[7];
 
       if (!(fraction in data)) {
         data[fraction] = {};
@@ -134,44 +158,38 @@ function buyerReport() {
       totalPrice += net_price;
 
     })
-  } // конец функции getData
+  } 
+  // конец функции getData
 
   const listOfMonths = getCorrectNames(startMonth, startYear, endMonth, endYear);
   
-  if (listOfMonths) {
-    listOfMonths.forEach(getDataFromSheet)
+  if (!listOfMonths)  return
 
-    // Вычисляем средние по станции перед репортом
-    for (const fraction in data) {
-      data[fraction]["fraction_total_amount"] = 0;
-      data[fraction]["fraction_total_money_net"] = 0;
-      for (const station in data[fraction]) {
-        data[fraction][station].average_net =
-          data[fraction][station].total_money_net /
-          data[fraction][station].total_amount;
-        data[fraction][station].average_gross =
-          data[fraction][station].total_money_gross /
-          data[fraction][station].total_amount;
-        if (
-          station !== "fraction_total_amount" &&
-          station !== "fraction_total_money_net"
+  listOfMonths.forEach(getDataFromSheet)
+
+  // Вычисляем средние по станции перед репортом
+  for (const fraction in data) {
+    data[fraction]["fraction_total_amount"] = 0;
+    data[fraction]["fraction_total_money_net"] = 0;
+    for (const station in data[fraction]) {
+      data[fraction][station].average_net = data[fraction][station].total_money_net / data[fraction][station].total_amount;
+      data[fraction][station].average_gross = data[fraction][station].total_money_gross / data[fraction][station].total_amount;
+      if (
+        station !== "fraction_total_amount" &&
+        station !== "fraction_total_money_net"
         ) {
-          data[fraction]["fraction_total_amount"] +=
-            data[fraction][station].total_amount;
-          data[fraction]["fraction_total_money_net"] +=
-            data[fraction][station].total_money_net;
+          data[fraction]["fraction_total_amount"] += data[fraction][station].total_amount;
+          data[fraction]["fraction_total_money_net"] += data[fraction][station].total_money_net;
         }
-      }
     }
-
-    displayReport();
   }
 
-  function displayReport() {
+  displayBuyersReport();
+
+
+  function displayBuyersReport() {
     reportSheet.deleteRows(9, 1992);
     reportSheet.insertRowsAfter(8, 1992);
-
-    // const range = reportSheet.getRange("A9:AA");
 
     let i = 1; // в range нумерация с 1
     for (fraction in data) {
@@ -191,10 +209,21 @@ function buyerReport() {
             const shipment = data[fraction][station].buyers[buyer].shipments[k];
             const rangeToSet = reportSheet.getRange(`A${i + 8}:K${i+8}`)
 
-            const res = [[
+            const before2024 = shipment[0] < new Date('01.01.2024')
+
+            const res = before2024 ?
+            [[
               shipment[0], shipment[18], shipment[14], 
               shipment[17], shipment[19], shipment[26],
               shipment[26] * shipment[19], shipment[33],
+              data[fraction][station]["average_net"], av_price,
+              `=100%*(I${i + 8}-J${i + 8})/J${i + 8}`
+            ]] 
+            :
+            [[
+              shipment[0], shipment[10] , shipment[7],
+              shipment[9], shipment[11], shipment[17],
+              shipment[11] * shipment[17], shipment[23],
               data[fraction][station]["average_net"], av_price,
               `=100%*(I${i + 8}-J${i + 8})/J${i + 8}`
             ]]
@@ -244,23 +273,7 @@ function buyerReport() {
   }
 }
 
-function getRightEnding(num_s) {
-  let ending = "";
-  const i_end = [2, 3, 4];
-  const ok_end = [0, 5, 6, 7, 8, 9];
-  if ((num_s > 10) & (num_s < 20)) {
-    ending = "отгрузок";
-  } else {
-    if (num_s % 10 === 1) {
-      ending = "отгрузка";
-    } else if (i_end.includes(num_s % 10)) {
-      ending = "отгрузки";
-    } else if (ok_end.includes(num_s % 10)) {
-      ending = "отгрузок";
-    }
-  }
-  return ending;
-}
+/// BUYERS REPORT END
 
 
 function carrierReport() {
@@ -271,34 +284,35 @@ function carrierReport() {
   const stationChosen = reportSheet.getRange("B3").getCell(1, 1).getValue();
   const startMonth = reportSheet.getRange("C4").getCell(1, 1).getValue();
   const endMonth = reportSheet.getRange("C5").getCell(1, 1).getValue();
+  const startYear = Number(reportSheet.getRange("D4").getCell(1, 1).getValue());
+  const endYear = Number(reportSheet.getRange("D5").getCell(1, 1).getValue());
+
+  const listOfMonths = getCorrectNames(startMonth, startYear, endMonth, endYear);
 
   function getDataFromSheet(sheetName) {
     const ss = workbook.getSheetByName(sheetName);
     const range = ss.getRange("A5:AK");
+    const before2024 = Number(sheetName.slice(3, 7)) === 2023
 
-    function filterByName(elt, idx, array) {
-      if (nameChosen === "ВСЕ") {
-        return (elt[7] === "") & (elt[10] === "") ? false : true;
-      } else if (elt[7] === nameChosen || elt[10] === nameChosen) {
-        return true;
-      } else {
-        return false;
-      }
-    }
-    function filterByStation(elt, idx, array) {
-      if (stationChosen === "ВСЕ") {
-        return true;
-      } else if (elt[14] === stationChosen) {
-        return true;
-      } else {
-        return false;
-      }
+    function filterByName(row) {
+      const name = before2024 ? row[17] : row[9]
+      if (nameChosen === "ВСЕ") return name === "" ? false : true;
+      if (name === nameChosen) return true;
+      return false;
     }
 
+    function filterByStation(row) {
+      if (stationChosen === "ВСЕ") return true
+      const station = before2024 ? row[14] : row[7]
+      if (station === stationChosen) return true;
+      return false;
+    }
+    
     const listedData = range
       .getValues()
       .filter(filterByName)
       .filter(filterByStation);
+
     for (row of listedData) {
       let ship = row[10] ? true : false;
       const carrier = row[10] + row[7];
@@ -467,7 +481,7 @@ function carrierReport() {
     reportSheet.autoResizeRows(9, i - 1);
   }
 
-  const listOfMonths = getCorrectNames(startMonth, endMonth);
+ 
 
   if (listOfMonths) {
     for (name of listOfMonths) {
