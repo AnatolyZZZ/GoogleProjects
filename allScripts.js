@@ -28,6 +28,10 @@ function getCorrectNames(startMonth, startYear, endMonth, endYear, check="РО")
   const fromMonth = months[startMonth];
   const totalStartMonth = startYear * 12 + fromMonth
   const totalEndMonth = endYear * 12 + toMonth
+  if (totalEndMonth < totalStartMonth) {
+    ui.alert("Дата окончания не может быть раньше дата начала")
+    return false
+  }
 
   function isListFits(list) {
     const name = list.getName()
@@ -50,6 +54,7 @@ function getCorrectNames(startMonth, startYear, endMonth, endYear, check="РО")
     ui.alert("Есть листы за одну и ту же дату, удалите или переименуйте неактуальный")
     return false
   }
+  if(!correctLists.length) return false
   return correctLists.map(list => list.getName())
 }
 
@@ -478,48 +483,46 @@ function averagesReport() {
   const data = {};
   const fraction_average = {};
   const reportSheet = workbook.getSheetByName("Ср.цены Отчет");
-  const buyer = reportSheet.getRange("B2").getCell(1, 1).getValue();
+  const buyerChosen = reportSheet.getRange("B2").getCell(1, 1).getValue();
   const fractionChosen = reportSheet.getRange("B3").getCell(1, 1).getValue();
   const startMonth = reportSheet.getRange("C4").getCell(1, 1).getValue();
   const endMonth = reportSheet.getRange("C5").getCell(1, 1).getValue();
+  const startYear = Number(reportSheet.getRange("D4").getCell(1, 1).getValue());
+  const endYear = Number(reportSheet.getRange("D5").getCell(1, 1).getValue());
+
+  const listOfMonths = getCorrectNames(startMonth, startYear, endMonth, endYear);
 
   function getDataFromSheet(sheetName) {
     const ss = workbook.getSheetByName(sheetName);
     const range = ss.getRange("A5:AK");
-    const listdata = range
+    const before2024 = Number(sheetName.slice(3, 7)) === 2023
+
+    function filterByName(row) {
+      const name = before2024 ? row[17] : row[9];
+      if (buyerChosen === "ВСЕ") return name === "" ? false : true;
+      if (name === buyerChosen) return true;
+      return false;
+    }
+
+    function filterByFraction(row) {
+      if (fractionChosen === "ВСЕ") return true;
+      const fraction = before2024 ? row[18].trim() : row[10].trim();
+      return (fraction === fractionChosen) 
+    }
+
+    const listData = range
       .getValues()
       .filter(filterByName)
       .filter(filterByFraction);
-
-    function filterByName(elt, idx, array) {
-      if (buyer === "ВСЕ") {
-        return elt[17] === "" ? false : true;
-      } else if (elt[17] === buyer) {
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-    function filterByFraction(elt, idx, array) {
-      if (fractionChosen === "ВСЕ") {
-        return true;
-      } else if (elt[18].trim() === fractionChosen) {
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-    for (row of listdata) {
-      const buyer = row[17];
-      const fraction = row[18].trim();
-      const _amount = Number(row[19]);
-      // const gross_price = row[26];
-      // const net_price =row[33];
-      const gross_cost = Number(row[26]) * _amount;
-      const cost_net = Number(row[33]) * _amount;
-      // const station = row[14];
+  
+    for (row of listData) {
+      const before2024 = row[0] < new Date('01.01.2024')
+      const buyer = before2024 ? row[17] : row[9]
+      const fraction = before2024 ? row[18].trim() : row[10].trim();
+      const amount = before2024 ? row[19] : row[11];
+      const netPrice = before2024 ?  Number(row[33]) : Number(row[23])
+      const netCost = netPrice * amount;
+    
       if (!(buyer in data)) {
         data[buyer] = { fractions: {} };
       }
@@ -530,63 +533,46 @@ function averagesReport() {
           shipments: [],
         };
       }
-      data[buyer].fractions[fraction].total_amount += _amount;
-      data[buyer].fractions[fraction].total_cost_net += cost_net;
+      data[buyer].fractions[fraction].total_amount += amount;
+      data[buyer].fractions[fraction].total_cost_net += netCost;
       data[buyer].fractions[fraction].shipments.push(row);
 
       if (!(fraction in fraction_average)) {
         fraction_average[fraction] = { total_amount: 0, total_cost: 0 };
       }
-      if ((buyer !== "ТДГЖ") & (cost_net > 0)) {
-        fraction_average[fraction].total_amount += _amount;
-        fraction_average[fraction].total_cost += cost_net;
+      if ((buyer !== "ТДГЖ") & (netCost > 0)) {
+        fraction_average[fraction].total_amount += amount;
+        fraction_average[fraction].total_cost += netCost;
       }
     } // конец цикла
   } // конец функции getData
-  const listOfMonths = getCorrectNames(startMonth, endMonth);
-
-  if (listOfMonths) {
-    for (name of listOfMonths) {
-      getDataFromSheet(name);
-    }
-    displayResult();
-  }
 
   function displayResult() {
     reportSheet.deleteRows(9, 1992);
     reportSheet.insertRowsAfter(8, 1992);
 
-    const range = reportSheet.getRange("A9:K");
-
     let i = 1;
-
-    for (_buyer in data) {
-      for (fraction in data[_buyer].fractions) {
-        const bf = data[_buyer].fractions[fraction];
-        // конкретные отгрузки
-        const shipments = bf.shipments;
+    for (buyer in data) {
+      for (fraction in data[buyer].fractions) {
+        const curFraction = data[buyer].fractions[fraction]
+        const shipments = curFraction.shipments;
         const groupStart = i + 8;
-        for (let j = 0; j < shipments.length; j++) {
-          const row = shipments[j];
-          range.getCell(i, 1).setValue(row[0]);
-          range.getCell(i, 2).setValue(_buyer);
-          range.getCell(i, 3).setValue(fraction);
-          range.getCell(i, 4).setValue(row[19]);
-          range.getCell(i, 5).setValue(row[33]);
+        // конкретные отгрузки
+        for (row of shipments) {
+          const before2024 = row[0] < new Date('01.01.2024')
+          const amount = before2024 ? row[19] : row[11];
+          const netPrice = before2024 ?  Number(row[33]) : Number(row[23])
+          const fractionAveragePrice = fraction_average[fraction].total_cost / fraction_average[fraction].total_amount
+          const diff = `=100%*(E${i + 8}-F${i + 8})/ABS(F${i + 8})`
+          const res = [[
+            row[0], buyer, fraction, amount, netPrice, fractionAveragePrice, diff
+          ]] 
 
-          range
-            .getCell(i, 6)
-            .setValue(
-              fraction_average[fraction].total_cost /
-                fraction_average[fraction].total_amount
-            );
-
-          range
-            .getCell(i, 7)
-            .setValue(`=100%*(E${i + 8}-F${i + 8})/ABS(F${i + 8})`);
-
+          const rangeToSet = reportSheet.getRange(`A${i + 8}:G${ i+ 8}`);
+          rangeToSet.setValues(res)
           i++;
         }
+
         const groupEnd = i + 7;
         let rangeToGroup = reportSheet.getRange(
           groupStart,
@@ -597,28 +583,33 @@ function averagesReport() {
         let group = reportSheet.getRowGroup(groupStart, 1);
         group.collapse();
         // конкретные отгрузки закончились
-        const ending = getRightEnding(shipments.length);
-        const shp = `${shipments.length} ${ending}`;
 
-        range.getCell(i, 1).setValue(shp);
-        range.getCell(i, 2).setValue(_buyer);
-        range.getCell(i, 3).setValue(fraction);
-        range.getCell(i, 4).setValue(bf.total_amount);
-        range.getCell(i, 5).setValue(bf.total_cost_net / bf.total_amount);
-        range
-          .getCell(i, 6)
-          .setValue(
-            fraction_average[fraction].total_cost /
-              fraction_average[fraction].total_amount
-          );
-        range
-          .getCell(i, 7)
-          .setValue(`=100%*(E${i + 8}-F${i + 8})/ABS(F${i + 8})`);
+        const ending = getRightEnding(shipments.length);
+        const shipmentString = `${shipments.length} ${ending}`;
+        const byerAveragePriceNet = curFraction.total_cost_net / curFraction.total_amount;
+        const averagePriceNet = fraction_average[fraction].total_cost / fraction_average[fraction].total_amount;
+        const diff = `=100%*(E${i + 8}-F${i + 8})/ABS(F${i + 8})`
+        const res = [[
+          shipmentString, buyer, fraction, curFraction.total_amount, 
+          byerAveragePriceNet, averagePriceNet, diff
+        ]]
+
+        const rangeToSet = reportSheet.getRange(`A${i + 8}:G${ i+ 8}`);
+        rangeToSet.setValues(res)
         i++;
       }
     }
     reportSheet.autoResizeRows(9, i - 1);
   } // конец displayResult
+
+  if (listOfMonths) {
+    for (name of listOfMonths) {
+      getDataFromSheet(name);
+    }
+    displayResult();
+  }
+
+  
 } // конец функции отчета
 
 function averageShipmentsReport() {
