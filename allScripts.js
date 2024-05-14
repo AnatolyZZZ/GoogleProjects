@@ -616,16 +616,29 @@ function averageShipmentsReport() {
   const reportSheet = workbook.getSheetByName("Ср.цены по отгрузке Отчет");
   const startMonth = reportSheet.getRange("C3").getCell(1, 1).getValue();
   const endMonth = reportSheet.getRange("C4").getCell(1, 1).getValue();
-  const targetFraction = reportSheet.getRange("B2").getCell(1, 1).getValue();
+  const startYear = Number(reportSheet.getRange("D3").getCell(1, 1).getValue());
+  const endYear = Number(reportSheet.getRange("D4").getCell(1, 1).getValue());
+  const fractionChosen = reportSheet.getRange("B2").getCell(1, 1).getValue().trim();
   const data = {};
 
+  const listOfMonths = getCorrectNames(startMonth, startYear, endMonth, endYear);
+
+  console.log('listOgMonths ->',listOfMonths);
+
+  if (listOfMonths) {
+    for (listName of listOfMonths) {
+      getDataFromSheet(listName);
+    }
+    displayResult();
+  }
+
   function getDataFromSheet(sheetName) {
-    function filterByFraction(elt) {
-      if (targetFraction === "ВСЕ") {
-        return elt[18] !== "";
-      } else {
-        return elt[18].trim() === targetFraction;
-      }
+    const before2024 = Number(sheetName.slice(3, 7)) === 2023
+
+    function filterByFraction(row) {
+      const fraction = before2024 ? row[18].trim() : row[10].trim();
+      if (fractionChosen === "ВСЕ") return !!fraction
+      return (fraction === fractionChosen) 
     }
 
     const ss = workbook.getSheetByName(sheetName);
@@ -633,200 +646,85 @@ function averageShipmentsReport() {
     const listdata = range.getValues().filter(filterByFraction);
 
     for (row of listdata) {
-      const fraction = row[18].trim();
-      const price_net = Number(row[33]);
-      const _amount = Number(row[19]);
-      const buyer = row[17];
-      let shipment_type;
-      switch (row[5]) {
-        case "тх":
-          shipment_type = "water";
-          break;
-        case "самовывоз":
-          shipment_type = "selfshipment";
-          break;
-        case "самовывоз розница":
-          shipment_type = "selfshipment_retail";
-          break;
-        default:
-          shipment_type = "carrier";
+      const fraction = before2024 ? row[18].trim() : row[10].trim();
+      const price_net = before2024 ? Number(row[33]) : Number(row[23]);
+      const amount = before2024 ? Number(row[19]) : Number(row[11]);
+      const buyer = before2024 ? row[17] : row[9]
+      if ((buyer === "ТДГЖ") || (price_net > 0)) continue
+      
+      const shipmentTypeDict = {
+        'тх' : 'water',
+        'т/х' : 'water',
+        'самовывоз' : 'selfshipment',
+        "самовывоз розница" : 'selfshipment_retail',
+        default : 'carrier'
+      }
+      const shipmentText = before2024 ? row[5] : row[4]
+      const shipment_type = shipmentTypeDict[shipmentText.trim()] || shipmentTypeDict.default;
+
+      const defaultFractionValue = {
+        amount: 0, 
+        cost: 0, 
+        maximum: -1, 
+        minimum: 10000000000 
       }
 
       if (!(fraction in data)) {
         data[fraction] = {
-          water: { amount: 0, cost: 0, maximum: -1, minimum: 10000000000 },
-          selfshipment: {
-            amount: 0,
-            cost: 0,
-            maximum: -1,
-            minimum: 10000000000,
-          },
-          carrier: { amount: 0, cost: 0, maximum: -1, minimum: 10000000000 },
-          selfshipment_retail: {
-            amount: 0,
-            cost: 0,
-            maximum: -1,
-            minimum: 10000000000,
-          },
+          water: {...defaultFractionValue},
+          selfshipment: {...defaultFractionValue},
+          carrier: { ...defaultFractionValue },
+          selfshipment_retail: {...defaultFractionValue}
         };
       }
-      if ((buyer !== "ТДГЖ") & (price_net > 0)) {
-        data[fraction][shipment_type].amount += _amount;
-        data[fraction][shipment_type].cost += _amount * price_net;
-        if (price_net > data[fraction][shipment_type].maximum) {
-          data[fraction][shipment_type].maximum = price_net;
-        }
-        if (price_net < data[fraction][shipment_type].minimum) {
-          data[fraction][shipment_type].minimum = price_net;
-        }
-      }
-    }
+      
+
+      data[fraction][shipment_type].amount += amount;
+      data[fraction][shipment_type].cost += amount * price_net;
+      if (price_net > data[fraction][shipment_type].maximum) data[fraction][shipment_type].maximum = price_net;
+      if (price_net < data[fraction][shipment_type].minimum) data[fraction][shipment_type].minimum = price_net; 
+    } 
   }
 
   function displayResult() {
-    const range_to_clear = reportSheet.getRange("A8:AD");
-    range_to_clear.clearContent();
-    range_to_clear.setBackground("white");
+    reportSheet.deleteRows(6, 100);
+    reportSheet.insertRowsAfter(5, 100);
     function sorting(a, b) {
       return (
         Number(a[0].slice(0, a[0].indexOf("*")).replace(",", ".")) -
         Number(b[0].slice(0, b[0].indexOf("*")).replace(",", "."))
       );
     }
+    const firstHat = [[
+      '', 'Вагоны + Вода', '', '', '', 'Вагоны', '', '', '',	'Вода', '', ''	
+    ]]
+    const secondHat = [[
+      '', 'Самовывоз', '', '', '', 'Самовывоз', '', '', '',	'Самовывоз розница', '', ''	
+    ]]
+    const hat = [[
+      'Фракция',	'Тоннаж',	'Цена щебня на тонну', 'Стоимость', '',	'Тоннаж',	'Цена щебня на тонну',	'Стоимость', ''	,	'Тоннаж',	'Цена щебня на тонну','Стоимость'
+    ]]
     // object.entries returns array wich we can sort and then convert back to object why convert back and not to use array?
     const sorted_data = Object.fromEntries(Object.entries(data).sort(sorting));
-    const range = reportSheet.getRange("A8:AD");
-    let i = 1;
-    for (fraction in sorted_data) {
-      const total_amount =
-        sorted_data[fraction].water.amount +
-        sorted_data[fraction].selfshipment.amount +
-        sorted_data[fraction].carrier.amount +
-        sorted_data[fraction].selfshipment_retail.amount;
-      if (total_amount === 0) {
-        continue;
-      }
-      const total_cost =
-        sorted_data[fraction].water.cost +
-        sorted_data[fraction].selfshipment.cost +
-        sorted_data[fraction].carrier.cost +
-        sorted_data[fraction].selfshipment_retail.cost;
-      const max_price_carrier = sorted_data[fraction].carrier.maximum;
-      const min_price_carrier = sorted_data[fraction].carrier.minimum;
-      const max_price_water = sorted_data[fraction].water.maximum;
-      const min_price_water = sorted_data[fraction].water.minimum;
-      const max_price_self = sorted_data[fraction].selfshipment.maximum;
-      const min_price_self_retail =
-        sorted_data[fraction].selfshipment_retail.minimum;
-      const max_price_self_retail =
-        sorted_data[fraction].selfshipment_retail.maximum;
-      const min_price_self = sorted_data[fraction].selfshipment.minimum;
-      const max_price_total = Math.max(
-        max_price_carrier,
-        max_price_water,
-        max_price_self,
-        max_price_self_retail
-      );
-      const min_price_total = Math.min(
-        min_price_self,
-        min_price_carrier,
-        min_price_water,
-        min_price_self_retail
-      );
-      const average_price = total_cost / total_amount;
-      range.getCell(i, 1).setValue(fraction);
-      range.getCell(i, 2).setValue(total_amount);
-      range.getCell(i, 3).setValue(average_price);
-      range.getCell(i, 4).setValue(total_cost);
-      range.getCell(i, 5).setValue(max_price_total / average_price - 1);
-      range.getCell(i, 6).setValue(1 - min_price_total / average_price);
-
-      const carrier_amount = sorted_data[fraction].carrier.amount;
-      const carrier_cost = sorted_data[fraction].carrier.cost;
-      if (carrier_amount !== 0) {
-        range.getCell(i, 8).setValue(carrier_amount);
-        const average_price_carrier = carrier_cost / carrier_amount;
-        range.getCell(i, 9).setValue(average_price_carrier);
-        range.getCell(i, 10).setValue(carrier_cost);
-        range
-          .getCell(i, 11)
-          .setValue(max_price_carrier / average_price_carrier - 1);
-        range
-          .getCell(i, 12)
-          .setValue(1 - min_price_carrier / average_price_carrier);
-      }
-
-      const water_amount = sorted_data[fraction].water.amount;
-      const water_cost = sorted_data[fraction].water.cost;
-      if (water_amount !== 0) {
-        range.getCell(i, 14).setValue(water_amount);
-        const average_price_water = water_cost / water_amount;
-        range.getCell(i, 15).setValue(average_price_water);
-        range.getCell(i, 16).setValue(water_cost);
-        range
-          .getCell(i, 17)
-          .setValue(max_price_water / average_price_water - 1);
-        range
-          .getCell(i, 18)
-          .setValue(1 - min_price_water / average_price_water);
-      }
-
-      const self_amount = sorted_data[fraction].selfshipment.amount;
-      const self_cost = sorted_data[fraction].selfshipment.cost;
-      if (self_amount !== 0) {
-        range.getCell(i, 20).setValue(self_amount);
-        const average_price_self = self_cost / self_amount;
-        range.getCell(i, 21).setValue(average_price_self);
-        range.getCell(i, 22).setValue(self_cost);
-        range.getCell(i, 23).setValue(max_price_self / average_price_self - 1);
-        range.getCell(i, 24).setValue(1 - min_price_self / average_price_self);
-      }
-
-      const self_retail_amount =
-        sorted_data[fraction].selfshipment_retail.amount;
-      const self_retail_cost = sorted_data[fraction].selfshipment_retail.cost;
-      if (self_retail_amount !== 0) {
-        range.getCell(i, 26).setValue(self_retail_amount);
-        const average_price_self_retail = self_retail_cost / self_retail_amount;
-        range.getCell(i, 27).setValue(average_price_self_retail);
-        range.getCell(i, 28).setValue(self_retail_cost);
-        range
-          .getCell(i, 29)
-          .setValue(max_price_self_retail / average_price_self_retail - 1);
-        range
-          .getCell(i, 30)
-          .setValue(1 - min_price_self_retail / average_price_self_retail);
-      }
-
-      i++;
-    }
-    reportSheet.autoResizeRows(8, i);
-    reportSheet.getRange(8, 1, i - 1, 30).setFontWeight("normal");
-
-    const totalrange = reportSheet.getRange(`A${7 + i}:AD${7 + i}`);
-    totalrange.getCell(1, 1).setValue("ИТОГО");
-    totalrange.getCell(1, 2).setFormula(`=SUM(B${8}:B${i + 6})`);
-    totalrange.getCell(1, 4).setFormula(`=SUM(D${8}:D${i + 6})`);
-    totalrange.getCell(1, 8).setFormula(`=SUM(H${8}:H${i + 6})`);
-    totalrange.getCell(1, 10).setFormula(`=SUM(J${8}:J${i + 6})`);
-    totalrange.getCell(1, 14).setFormula(`=SUM(N${8}:N${i + 6})`);
-    totalrange.getCell(1, 16).setFormula(`=SUM(P${8}:P${i + 6})`);
-    totalrange.getCell(1, 20).setFormula(`=SUM(T${8}:T${i + 6})`);
-    totalrange.getCell(1, 22).setFormula(`=SUM(V${8}:V${i + 6})`);
-    totalrange.getCell(1, 26).setFormula(`=SUM(Z${8}:Z${i + 6})`);
-    totalrange.getCell(1, 28).setFormula(`=SUM(AB${8}:AB${i + 6})`);
-    totalrange.setBackground("lightgray");
-    totalrange.setFontWeight("bold");
+    let i = 6;
+    let range = reportSheet.getRange(`A${i}:L${i}`);
+    range.setValues(firstHat);
+    range.setHorizontalAlignment("center")
+    range = reportSheet.getRange(`B${i}:D${i}`);
+    range.setBackground('#d2f1da');
+    range.merge();
+    range.setFontWeight("bold")
+    range = reportSheet.getRange(`F${i}:H${i}`);
+    range.merge();
+    range = reportSheet.getRange(`J${i}:L${i}`);
+    range.merge();
+    i++;
+    range = reportSheet.getRange(`A${i}:L${i}`)
+    range.setValues(hat);
+    range.setHorizontalAlignment("center")
+    range.setFontWeight("bold")
   }
 
-  const listOfMonths = getCorrectNames(startMonth, endMonth);
-
-  if (listOfMonths) {
-    for (name of listOfMonths) {
-      getDataFromSheet(name);
-    }
-    displayResult();
-  }
 }
 
 function deleteDuplicates() {
