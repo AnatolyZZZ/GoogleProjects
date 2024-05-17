@@ -650,7 +650,7 @@ function averageShipmentsReport() {
       const price_net = before2024 ? Number(row[33]) : Number(row[23]);
       const amount = before2024 ? Number(row[19]) : Number(row[11]);
       const buyer = before2024 ? row[17] : row[9]
-      if ((buyer === "ТДГЖ") || (price_net > 0)) continue
+      if ((buyer === "ТДГЖ") || !(Number(price_net > 0))) continue
       
       const shipmentTypeDict = {
         'тх' : 'water',
@@ -668,6 +668,7 @@ function averageShipmentsReport() {
         maximum: -1, 
         minimum: 10000000000 
       }
+      if(amount === 0) continue
 
       if (!(fraction in data)) {
         data[fraction] = {
@@ -704,25 +705,92 @@ function averageShipmentsReport() {
     const hat = [[
       'Фракция',	'Тоннаж',	'Цена щебня на тонну', 'Стоимость', '',	'Тоннаж',	'Цена щебня на тонну',	'Стоимость', ''	,	'Тоннаж',	'Цена щебня на тонну','Стоимость'
     ]]
-    // object.entries returns array wich we can sort and then convert back to object why convert back and not to use array?
     const sorted_data = Object.fromEntries(Object.entries(data).sort(sorting));
     let i = 6;
     let range = reportSheet.getRange(`A${i}:L${i}`);
-    range.setValues(firstHat);
-    range.setHorizontalAlignment("center")
-    range = reportSheet.getRange(`B${i}:D${i}`);
-    range.setBackground('#d2f1da');
-    range.merge();
-    range.setFontWeight("bold")
-    range = reportSheet.getRange(`F${i}:H${i}`);
-    range.merge();
-    range = reportSheet.getRange(`J${i}:L${i}`);
-    range.merge();
+
+    const setHat = (hatToSet) => {
+      range = reportSheet.getRange(`A${i}:L${i}`);
+      range.setValues(hatToSet);
+      range.setHorizontalAlignment("center")
+      range = reportSheet.getRange(`B${i}:D${i}`);
+      range.setBackground('#d2f1da');
+      range.merge();
+      range.setFontWeight("bold")
+      range = reportSheet.getRange(`F${i}:H${i}`);
+      range.merge();
+      range = reportSheet.getRange(`J${i}:L${i}`);
+      range.merge();
+      i++;
+      range = reportSheet.getRange(`A${i}:L${i}`);
+      range.setValues(hat);
+      range.setHorizontalAlignment("center");
+      range.setFontWeight("bold");
+      range.setBorder(null, null, true, null, null, null)
+    }
+
+    setHat(firstHat);
     i++;
+    
+    for (fraction in sorted_data) {
+      const carrierCost = data[fraction].carrier.cost;
+      const waterCost = data[fraction].water.cost;
+      const carrierAmount = data[fraction].carrier.amount;
+      const waterAmount = data[fraction].water.amount;
+      const totalAmount  = carrierAmount + waterAmount;
+      const totalCost = carrierCost + waterCost;
+      const average = totalAmount ? totalCost / totalAmount : '';
+      const waterAverage = waterAmount ? waterCost / waterAmount : ''
+      const carrierAverage = carrierAmount ? carrierCost / carrierAmount : ''
+
+      const res = [[
+        fraction, totalAmount || '', average || '', totalCost || '', '',
+        carrierAmount || '', carrierAverage || '', carrierCost || '', '',
+        waterAmount || '', waterAverage || '', waterCost || ''
+      ]]
+      range = reportSheet.getRange(`A${i}:L${i}`)
+      range.setValues(res);
+      i++
+    }
+    range = reportSheet.getRange(`E${6}:E${i - 1}`)
+    range.setBorder(null, true, null, true, null, null)
+    range = reportSheet.getRange(`I${6}:I${i - 1}`)
+    range.setBorder(null, true, null, true, null, null)
+    
     range = reportSheet.getRange(`A${i}:L${i}`)
-    range.setValues(hat);
-    range.setHorizontalAlignment("center")
-    range.setFontWeight("bold")
+    range.setBorder(true, null, true, null, null, null)
+    i++;
+    const secondPartStart = i;
+    setHat(secondHat);
+    i++;
+
+    for (fraction in sorted_data) {
+      const selfshipmentCost = data[fraction].selfshipment.cost;
+      const selfshipment_retailCost = data[fraction].selfshipment_retail.cost;
+      const selfshipmentAmount = data[fraction].selfshipment.amount;
+      const selfshipment_retailAmount = data[fraction].selfshipment_retail.amount;
+      const totalAmount  = selfshipmentAmount + selfshipment_retailAmount;
+      const totalCost = selfshipmentCost + selfshipment_retailCost;
+      const average = totalAmount ? totalCost / totalAmount : '';
+      const selfshipment_retailAverage = selfshipment_retailAmount ?  selfshipment_retailCost / selfshipment_retailAmount  : ''
+      const selfshipmentAverage = selfshipmentAmount ?  selfshipmentCost / selfshipmentAmount  : ''
+
+      const res = [[
+        fraction, totalAmount || '', average || '', totalCost || '' , '',
+        selfshipmentAmount || '', selfshipmentAverage || '', selfshipmentCost || '', '',
+        selfshipment_retailAmount || '', selfshipment_retailAverage || '', selfshipment_retailCost || ''
+      ]]
+      range = reportSheet.getRange(`A${i}:L${i}`)
+      range.setValues(res);
+      i++
+    }
+
+    range = reportSheet.getRange(`E${secondPartStart}:E${i - 1}`)
+    range.setBorder(null, true, null, true, null, null)
+    range = reportSheet.getRange(`I${secondPartStart}:I${i - 1}`)
+    range.setBorder(null, true, null, true, null, null)
+    range = reportSheet.getRange(`A6:L${i - 1}`)
+    range.setBorder(null, null, true, true, null, null)
   }
 
 }
