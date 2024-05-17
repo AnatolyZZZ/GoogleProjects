@@ -20,7 +20,7 @@ const months = {
 ///
 
 
-// COMMON FUNCRIONS
+// COMMON FUNCTIONS
 
 // возвращает список листов с по или false если какого-то не хватает
 function getCorrectNames(startMonth, startYear, endMonth, endYear, check="РО") {
@@ -77,7 +77,6 @@ function getRightEnding(num_s) {
 }
 ////
 
-// BUYER REPORT
 function buyerReport() {
   const data = {};
   let totalAmount = 0;
@@ -709,7 +708,7 @@ function averageShipmentsReport() {
     let i = 6;
     let range = reportSheet.getRange(`A${i}:L${i}`);
 
-    const setHat = (hatToSet) => {
+    const setHeader = (hatToSet) => {
       range = reportSheet.getRange(`A${i}:L${i}`);
       range.setValues(hatToSet);
       range.setHorizontalAlignment("center")
@@ -729,7 +728,7 @@ function averageShipmentsReport() {
       range.setBorder(null, null, true, null, null, null)
     }
 
-    setHat(firstHat);
+    setHeader(firstHat);
     i++;
     
     for (fraction in sorted_data) {
@@ -761,7 +760,7 @@ function averageShipmentsReport() {
     range.setBorder(true, null, true, null, null, null)
     i++;
     const secondPartStart = i;
-    setHat(secondHat);
+    setHeader(secondHat);
     i++;
 
     for (fraction in sorted_data) {
@@ -791,92 +790,6 @@ function averageShipmentsReport() {
     range.setBorder(null, true, null, true, null, null)
     range = reportSheet.getRange(`A6:L${i - 1}`)
     range.setBorder(null, null, true, true, null, null)
-  }
-
-}
-
-function deleteDuplicates() {
-  const names = [];
-  for (let i = 0; i < allSheets.length; i++) {
-    const current_sheet = allSheets[i];
-    const current_name = allSheets[i].getName();
-    const len = current_name.length;
-    if ((current_name[len - 3] === "(") & (current_name[len - 1] === ")")) {
-      const nameSliced = current_name.slice(0, len - 4);
-      if (names.includes(nameSliced)) {
-        const ss = workbook.getSheetByName(nameSliced);
-        workbook.deleteSheet(ss);
-        current_sheet.setName(nameSliced);
-      } else names.push(current_name);
-    } else names.push(current_name);
-  }
-}
-
-function generateInputs() {
-  const buyers = new Set();
-  const fractions = new Set();
-  const carriers = new Set();
-  const stations = new Set();
-  for (let i = 0; i < allSheets.length; i++) {
-    const current_sheet = allSheets[i];
-    const current_name = allSheets[i].getName();
-    if (current_name.slice(0, 8) === "РО 2023.") {
-      const buyers_all = current_sheet.getRange("R5:R").getValues();
-      const fractions_all = current_sheet.getRange("S5:S").getValues();
-      const carriers_all_carrige = current_sheet.getRange("H5:H").getValues();
-      const carriers_all_ship = current_sheet.getRange("K5:K").getValues();
-      const stations_all = current_sheet.getRange("O5:O").getValues();
-      for (b of buyers_all) {
-        if (b[0]) {
-          buyers.add(b[0]);
-        }
-      }
-      for (f of fractions_all) {
-        if (f[0]) {
-          fractions.add(f[0].trim());
-        }
-      }
-      for (c of carriers_all_carrige) {
-        if (c[0]) {
-          carriers.add(c[0]);
-        }
-      }
-      for (c of carriers_all_ship) {
-        if (c[0]) {
-          carriers.add(c[0]);
-        }
-      }
-      for (s of stations_all) {
-        if (s[0]) {
-          stations.add(s[0]);
-        }
-      }
-    }
-  }
-
-  const iterator_b = buyers.values();
-  const iterator_f = fractions.values();
-  const iterator_c = carriers.values();
-  const iterator_s = stations.values();
-  const inputs = workbook.getSheetByName("Служебный");
-  const input_buyers = inputs.getRange("B3:B");
-  input_buyers.clear();
-  const input_fractions = inputs.getRange("A3:A");
-  input_fractions.clear();
-  const input_carriers = inputs.getRange("D3:D");
-  input_carriers.clear();
-  input_stations = inputs.getRange("E3:E");
-  for (let i = 1; i < buyers.size + 1; i++) {
-    input_buyers.getCell(i, 1).setValue(iterator_b.next().value);
-  }
-  for (let i = 1; i < fractions.size + 1; i++) {
-    input_fractions.getCell(i, 1).setValue(iterator_f.next().value);
-  }
-  for (let i = 1; i < carriers.size + 1; i++) {
-    input_carriers.getCell(i, 1).setValue(iterator_c.next().value);
-  }
-  for (let i = 1; i < stations.size + 1; i++) {
-    input_stations.getCell(i, 1).setValue(iterator_s.next().value);
   }
 }
 
@@ -1005,4 +918,91 @@ function deliveryReport() {
     i++;
   }
 
+}
+
+// GENERAL SCRIPTS 
+
+function deleteDuplicates() {
+  const names = [];
+  for (let i = 0; i < allSheets.length; i++) {
+    const current_sheet = allSheets[i];
+    const current_name = allSheets[i].getName();
+    const len = current_name.length;
+    if ((current_name[len - 3] === "(") & (current_name[len - 1] === ")")) {
+      const nameSliced = current_name.slice(0, len - 4);
+      if (names.includes(nameSliced)) {
+        const ss = workbook.getSheetByName(nameSliced);
+        workbook.deleteSheet(ss);
+        current_sheet.setName(nameSliced);
+      } else names.push(current_name);
+    } else names.push(current_name);
+  }
+}
+
+function generateInputs() {
+  const buyers = new Set();
+  const fractions = new Set();
+  const carriers = new Set();
+  const stations = new Set();
+  for (let i = 0; i < allSheets.length; i++) {
+    const current_sheet = allSheets[i];
+    const current_name = allSheets[i].getName();
+    if (current_name.slice(0, 8) === "РО 2023.") {
+      const buyers_all = current_sheet.getRange("R5:R").getValues();
+      const fractions_all = current_sheet.getRange("S5:S").getValues();
+      const carriers_all_carrige = current_sheet.getRange("H5:H").getValues();
+      const carriers_all_ship = current_sheet.getRange("K5:K").getValues();
+      const stations_all = current_sheet.getRange("O5:O").getValues();
+      for (b of buyers_all) {
+        if (b[0]) {
+          buyers.add(b[0]);
+        }
+      }
+      for (f of fractions_all) {
+        if (f[0]) {
+          fractions.add(f[0].trim());
+        }
+      }
+      for (c of carriers_all_carrige) {
+        if (c[0]) {
+          carriers.add(c[0]);
+        }
+      }
+      for (c of carriers_all_ship) {
+        if (c[0]) {
+          carriers.add(c[0]);
+        }
+      }
+      for (s of stations_all) {
+        if (s[0]) {
+          stations.add(s[0]);
+        }
+      }
+    }
+  }
+
+  const iterator_b = buyers.values();
+  const iterator_f = fractions.values();
+  const iterator_c = carriers.values();
+  const iterator_s = stations.values();
+  const inputs = workbook.getSheetByName("Служебный");
+  const input_buyers = inputs.getRange("B3:B");
+  input_buyers.clear();
+  const input_fractions = inputs.getRange("A3:A");
+  input_fractions.clear();
+  const input_carriers = inputs.getRange("D3:D");
+  input_carriers.clear();
+  input_stations = inputs.getRange("E3:E");
+  for (let i = 1; i < buyers.size + 1; i++) {
+    input_buyers.getCell(i, 1).setValue(iterator_b.next().value);
+  }
+  for (let i = 1; i < fractions.size + 1; i++) {
+    input_fractions.getCell(i, 1).setValue(iterator_f.next().value);
+  }
+  for (let i = 1; i < carriers.size + 1; i++) {
+    input_carriers.getCell(i, 1).setValue(iterator_c.next().value);
+  }
+  for (let i = 1; i < stations.size + 1; i++) {
+    input_stations.getCell(i, 1).setValue(iterator_s.next().value);
+  }
 }
